@@ -2,7 +2,7 @@
 贪吃蛇小游戏 - 关卡版
 ↑↓←→ / WASD 移动 | Space 重试 | P 暂停 | R 返回选关 | F11 全屏
 红果 +10分 | 紫炸弹果 炸掉最近怪物
-🏰 5个关卡 | 每关怪物递增2只 | 20分解锁下一关
+🏰 5个关卡 | 每关怪物递增2只 | 200分解锁下一关
 3条命 | 无敌穿墙传送
 自动适配屏幕分辨率，窗口化全屏运行
 """
@@ -21,7 +21,7 @@ TOTAL = GW * GH
 SPEED = 100
 INIT_LEN = 3
 FOOD_SCORE = 10
-MAX_FOOD = 10                    # 同时存在的红果数量
+MAX_FOOD = 5                     # 同时存在的红果数量
 
 MON_LEN = 3
 MON_SPAWN_LO = 3000
@@ -43,7 +43,7 @@ LEVEL_CONFIG = {
     4: {"name": "第四关", "max_mon": 9, "color": "#f472b6", "icon": "💎", "border": "#db2777"},
     5: {"name": "第五关", "max_mon": 11, "color": "#ef4444", "icon": "👑", "border": "#dc2626"},
 }
-TARGET_SCORE = 20
+TARGET_SCORE = 200
 TOTAL_LEVELS = 5
 
 # 存档路径
@@ -57,8 +57,8 @@ CHD = "#32CC8A"
 CBD = "#5CE6B0"
 CINV = "#F9E547"
 CFD = "#FF5555"
-CBM = "#FFD740"
-CBO = "#FFD740"
+CBM = "#9B59B6"
+CBO = "#BB6BD9"
 CMH = "#FF9500"
 CMB = "#FF6348"
 CTX = "#CDD6F4"
@@ -522,6 +522,9 @@ class SnakeGame:
 
     def _on_click(self, event):
         """鼠标点击处理：关卡卡片 / 多人模式 / 退出 / 结算按钮"""
+        # 多人模式进行中不响应点击（防止误触进入关卡导致状态混乱）
+        if self.multiplayer and self.run and not self.mp_over:
+            return
         # 只在选关界面响应点击（多人结算除外）
         if self.current_level != 0 and not self.mp_over:
             return
@@ -783,6 +786,8 @@ class SnakeGame:
 
     def _check_mp_end(self):
         """检查多人模式是否结束（两人都死亡）"""
+        if self.mp_over:  # 已结束，避免重复统计和重复绘制结算界面
+            return True
         if self.lives <= 0 and self.lives2 <= 0:
             self.run = False
             self.mp_over = True
@@ -1489,9 +1494,21 @@ class SnakeGame:
 
     # ========== 炸弹 ==========
     def _kill_one(self):
+        """炸掉距离最近的怪物（多人模式下自动选择存活玩家的蛇头作为参考点）"""
         if not self.mons:
             return
-        hd = self.snake[0]
+        # 多人模式：选择存活玩家的蛇头来定位最近怪物
+        if self.multiplayer:
+            p1_alive = bool(self.snake) and self.lives > 0
+            p2_alive = bool(self.snake2) and self.lives2 > 0
+            if p1_alive:
+                hd = self.snake[0]
+            elif p2_alive:
+                hd = self.snake2[0]
+            else:
+                return  # 双方都阵亡，无法炸
+        else:
+            hd = self.snake[0]
         bi, bd = 0, 9999
         for i, m in enumerate(self.mons):
             d = dist(m[0], hd)
@@ -1713,8 +1730,8 @@ class SnakeGame:
             r = CELL//2-3
             c.create_polygon(cx,cy-r, cx+r,cy, cx,cy+r, cx-r,cy,
                 fill=CBM, outline=CBO, width=2, tags="b")
-            c.create_line(cx,cy-r, cx,cy-r-4, fill="#ffd700", width=2, tags="b")
-            c.create_oval(cx-2,cy-r-7, cx+2,cy-r-3, fill="#ff8800", outline="", tags="b")
+            c.create_line(cx,cy-r, cx,cy-r-4, fill="#BB6BD9", width=2, tags="b")
+            c.create_oval(cx-2,cy-r-7, cx+2,cy-r-3, fill="#D2A0E8", outline="", tags="b")
 
         # 蛇
         inv = self.inv
