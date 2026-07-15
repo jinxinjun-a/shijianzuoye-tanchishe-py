@@ -1405,10 +1405,10 @@ class SnakeGame:
             elif random.random() < 0.2:
                 nd = self._rdir(mh, occ, [REV.get(cur, cur)])
 
-            if not self._can(mh, nd, occ):
+            if nd is not None and not self._can(mh, nd, occ):
                 nd = self._rdir(mh, occ)
-
             if nd is None:
+                dead.append(i)
                 continue
 
             dx, dy = DIR[nd]
