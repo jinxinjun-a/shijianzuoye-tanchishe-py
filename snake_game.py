@@ -12,14 +12,16 @@ import random
 import time
 import json
 import os
+from collections import deque
 
 # ==================== 常量 ====================
 CELL = 20                     # 每格像素（会根据屏幕微调）
 GW, GH = 30, 20               # 网格宽高（启动时根据屏幕自动计算）
 TOTAL = GW * GH
-SPEED = 140
+SPEED = 100
 INIT_LEN = 3
 FOOD_SCORE = 10
+MAX_FOOD = 10                    # 同时存在的红果数量
 
 MON_LEN = 3
 MON_SPAWN_LO = 3000
@@ -48,27 +50,27 @@ TOTAL_LEVELS = 5
 SAVE_DIR = "saves"
 SAVE_FILE = os.path.join(SAVE_DIR, "progress.json")
 
-# 颜色
-CBG = "#1a1a2e"
-CGR = "#16213e"
-CHD = "#00ff88"
-CBD = "#00cc6a"
-CINV = "#ffdd57"
-CFD = "#ff4757"
-CBM = "#a855f7"
-CBO = "#c084fc"
-CMH = "#ff6348"
-CMB = "#e74c3c"
-CTX = "#ffffff"
+# 颜色 — 暗色主题（参考桌面版配色）
+CBG = "#1A1A2E"
+CGR = "#222240"
+CHD = "#32CC8A"
+CBD = "#5CE6B0"
+CINV = "#F9E547"
+CFD = "#FF5555"
+CBM = "#FFD740"
+CBO = "#FFD740"
+CMH = "#FF9500"
+CMB = "#FF6348"
+CTX = "#CDD6F4"
 CDM = "#888888"
-COV = "#ff6b6b"
+COV = "#FF6B6B"
 CLOCKED_BG = "#2a2a3a"
 CLOCKED_FG = "#555555"
 CARD_BG = "#1e1e3a"
 
 # 多人模式颜色
-CP1 = "#00ff88"                # 玩家1 绿色
-CP1B = "#00cc6a"
+CP1 = "#32CC8A"                # 玩家1 绿色
+CP1B = "#5CE6B0"
 CP2 = "#4da6ff"                # 玩家2 蓝色
 CP2B = "#0066cc"
 CMP_BTN = "#0a3d2e"           # 多人按钮背景
@@ -315,8 +317,8 @@ class SnakeGame:
     def _init(self):
         self.snake = []
         self.dr = "RIGHT"
-        self.ndr = "RIGHT"
-        self.food = None
+        self._dir_queue = deque()
+        self.foods = []
         self.bomb = None
         self.mons = []
         self.mdr = []
@@ -605,7 +607,7 @@ class SnakeGame:
         self._grid()
         self._init()
         self.run = True
-        self._place("food")
+        self._fill_foods()
         self._place("bomb")
         self._next_spawn()
         self._bar()
@@ -716,7 +718,7 @@ class SnakeGame:
         self._grid()
         self._init_multiplayer()
         self.run = True
-        self._place("food")
+        self._fill_foods()
         self._place("food2")       # 第2个食物
         self._place("bomb")
         self._next_spawn()
@@ -730,7 +732,7 @@ class SnakeGame:
         cx1, cy1 = GW//4, GH//2
         self.snake = [(cx1-i, cy1) for i in range(INIT_LEN)]
         self.dr = "RIGHT"
-        self.ndr = "RIGHT"
+        self._dir_queue = deque()
         # 玩家2 从右侧出发
         cx2, cy2 = GW*3//4, GH//2
         self.snake2 = [(cx2+i, cy2) for i in range(INIT_LEN)]
@@ -754,7 +756,7 @@ class SnakeGame:
         self.winner = None
         self.mp_settle_btns = []
         self.run = True
-        self._place("food")
+        self._fill_foods()
         self._place("food2")
         self._place("bomb")
         self._next_spawn()
@@ -860,10 +862,14 @@ class SnakeGame:
 
         self.snake2.insert(0, nh)
         ate = False
-        if nh == self.food:
-            self.score2 += FOOD_SCORE
-            self._place("food")
-            ate = True
+        # 检查是否吃到共享红果（遍历列表）
+        for fi, fp in enumerate(self.foods):
+            if nh == fp:
+                self.score2 += FOOD_SCORE
+                self.foods.pop(fi)
+                self._place_one_food()
+                ate = True
+                break
         if nh == self.food2:
             self.score2 += FOOD_SCORE
             self._place("food2")
@@ -1139,7 +1145,7 @@ class SnakeGame:
         else:
             self._init()
             self.run = True
-            self._place("food")
+            self._fill_foods()
             self._place("bomb")
             self._next_spawn()
             self._bar()
@@ -1204,7 +1210,9 @@ class SnakeGame:
         # 多人模式：如果P1已阵亡则跳过
         if self.multiplayer and (not self.snake or self.lives <= 0):
             return
-        self.dr = self.ndr
+        # 消费方向队列
+        if self._dir_queue:
+            self.dr = self._dir_queue.popleft()
         hx, hy = self.snake[0]
         dx, dy = DIR[self.dr]
         nx, ny = hx+dx, hy+dy
@@ -1245,10 +1253,14 @@ class SnakeGame:
 
         self.snake.insert(0, nh)
         ate_food = False
-        if nh == self.food:
-            self.score += FOOD_SCORE
-            self._place("food")
-            ate_food = True
+        # 检查是否吃到红果（遍历列表）
+        for fi, fp in enumerate(self.foods):
+            if nh == fp:
+                self.score += FOOD_SCORE
+                self.foods.pop(fi)
+                self._place_one_food()
+                ate_food = True
+                break
         if self.multiplayer and nh == self.food2:
             self.score += FOOD_SCORE
             self._place("food2")
@@ -1256,7 +1268,8 @@ class SnakeGame:
         if nh == self.bomb:
             self._kill_one()
             self._place("bomb")
-        elif not ate_food:
+            ate_food = True
+        if not ate_food:
             self.snake.pop()
 
         # 吃到食物后检测解锁（仅单人模式）
@@ -1376,11 +1389,12 @@ class SnakeGame:
                     cd = self._toward(mh, sh)
                     nd = cd if self._can(mh, cd, occ) else self._best(mh, sh, occ)
             # === 优先级2：找食物吃（索敌范围 = 2× 追人范围） ===
-            elif self.food:
-                fd = dist(mh, self.food)
+            elif self.foods:
+                nearest_food = min(self.foods, key=lambda fp: dist(mh, fp))
+                fd = dist(mh, nearest_food)
                 if fd <= FOOD_CHASE_R:
-                    cd = self._toward(mh, self.food)
-                    nd = cd if self._can(mh, cd, occ) else self._best(mh, self.food, occ)
+                    cd = self._toward(mh, nearest_food)
+                    nd = cd if self._can(mh, cd, occ) else self._best(mh, nearest_food, occ)
                 elif random.random() < 0.2:
                     nd = self._rdir(mh, occ, [REV.get(cur, cur)])
             elif random.random() < 0.2:
@@ -1410,9 +1424,14 @@ class SnakeGame:
                 continue
 
             # ---- 存活：处理食物 / 生长 ----
-            if (nx, ny) == self.food:
-                self._place("food")       # 吃到果子 → 不 pop，身体 +1
-            else:
+            ate = False
+            for fi, fp in enumerate(self.foods):
+                if (nx, ny) == fp:
+                    self.foods.pop(fi)
+                    self._place_one_food()
+                    ate = True
+                    break
+            if not ate:
                 m.pop()
 
         # 倒序删除死亡怪物
@@ -1499,11 +1518,12 @@ class SnakeGame:
         cx, cy = GW//2, GH//2
         self.snake = [(cx-i, cy) for i in range(min(old, GW))]
         self.dr = "RIGHT"
-        self.ndr = "RIGHT"
+        self._dir_queue.clear()
         self.inv = True
         self.inv_end = int(time.time()*1000) + INV_MS
         self.inv_show = True
-        self._place("food")
+        self.foods.clear()
+        self._fill_foods()
         self._place("bomb")
 
     def _end(self):
@@ -1572,8 +1592,8 @@ class SnakeGame:
             o.update(self.snake2)
         for m in self.mons:
             o.update(m)
-        if self.food:
-            o.add(self.food)
+        for fp in self.foods:
+            o.add(fp)
         if self.multiplayer and self.food2:
             o.add(self.food2)
         if self.bomb:
@@ -1581,6 +1601,7 @@ class SnakeGame:
         return o
 
     def _place(self, which):
+        """放置炸弹或food2（保留原方法，food2用于多人模式）"""
         o = self._occ()
         if len(o) >= TOTAL:
             return
@@ -1592,8 +1613,7 @@ class SnakeGame:
                 edge = min(x, GW-1-x, y, GH-1-y)
                 if edge <= 1 and random.random() < (0.7 if edge == 0 else 0.4):
                     continue  # 拒绝此位置，重试
-                if which == "food": self.food = (x,y)
-                elif which == "food2": self.food2 = (x,y)
+                if which == "food2": self.food2 = (x,y)
                 else: self.bomb = (x,y)
                 return
         # 回退：线性扫描（也优先内部）
@@ -1605,9 +1625,39 @@ class SnakeGame:
                     if best is None or e > best[0]:
                         best = (e, x, y)
         if best:
-            if which == "food": self.food = (best[1], best[2])
-            elif which == "food2": self.food2 = (best[1], best[2])
+            if which == "food2": self.food2 = (best[1], best[2])
             else: self.bomb = (best[1], best[2])
+
+    def _place_one_food(self):
+        """生成一个红果，追加到 foods 列表"""
+        o = self._occ()
+        for fp in self.foods:
+            o.discard(fp)        # 允许红果之间重叠（但一般不会）
+        if len(o) >= TOTAL:
+            return
+        for _ in range(500):
+            x = random.randint(0, GW-1)
+            y = random.randint(0, GH-1)
+            if (x,y) not in o:
+                edge = min(x, GW-1-x, y, GH-1-y)
+                if edge <= 1 and random.random() < (0.7 if edge == 0 else 0.4):
+                    continue
+                self.foods.append((x,y))
+                return
+        best = None
+        for x in range(GW):
+            for y in range(GH):
+                if (x,y) not in o:
+                    e = min(x, GW-1-x, y, GH-1-y)
+                    if best is None or e > best[0]:
+                        best = (e, x, y)
+        if best:
+            self.foods.append((best[1], best[2]))
+
+    def _fill_foods(self):
+        """补充红果直到 MAX_FOOD 个"""
+        while len(self.foods) < MAX_FOOD:
+            self._place_one_food()
 
     # ========== 渲染 ==========
     def _draw(self):
@@ -1642,9 +1692,9 @@ class SnakeGame:
                           font=("Microsoft YaHei", 10, "bold"),
                           fill=cfg["color"], tags="unlock")
 
-        # 食物
-        if self.food:
-            fx,fy = self.food
+        # 食物（多个红果）
+        for fp in self.foods:
+            fx,fy = fp
             x1,y1 = fx*CELL+2, fy*CELL+2
             c.create_oval(x1,y1, x1+CELL-4,y1+CELL-4,
                 fill=CFD, outline="#ff6b81", width=2, tags="f")
@@ -1835,34 +1885,48 @@ class SnakeGame:
 
     # ========== 方向 ==========
     def _dir_p1(self, nd):
-        """玩家1 方向（WASD）"""
+        """玩家1 方向（WASD）— 使用方向队列"""
         if self.multiplayer:
-            # 多人模式：控制玩家1
-            if nd != REV.get(self.dr, "") and self.run and not self.mp_over:
-                self.ndr = nd
+            # 多人模式：控制玩家1（方向队列）
+            ref = self._dir_queue[-1] if self._dir_queue else self.dr
+            if nd == REV.get(ref, "") or nd == ref:
+                return
+            if len(self._dir_queue) >= 3:
+                return
+            if not self.run or self.mp_over:
+                return
+            self._dir_queue.append(nd)
         else:
             # 单人模式：同原逻辑
             if self.current_level == 0:
                 return
-            if nd != REV.get(self.dr, ""):
-                self.ndr = nd
-                if not self.run:
-                    self._start()
+            ref = self._dir_queue[-1] if self._dir_queue else self.dr
+            if nd == REV.get(ref, "") or nd == ref:
+                return
+            if len(self._dir_queue) >= 3:
+                return
+            self._dir_queue.append(nd)
+            if not self.run:
+                self._start()
 
     def _dir_arrow(self, nd):
-        """方向键：多人模式→玩家2，单人模式→玩家1"""
+        """方向键：多人模式→玩家2（单方向），单人模式→玩家1（方向队列）"""
         if self.multiplayer:
-            # 多人模式：控制玩家2
+            # 多人模式：控制玩家2（保持单方向）
             if nd != REV.get(self.dr2, "") and self.run and not self.mp_over:
                 self.ndr2 = nd
         else:
-            # 单人模式：控制玩家1
+            # 单人模式：控制玩家1（方向队列）
             if self.current_level == 0:
                 return
-            if nd != REV.get(self.dr, ""):
-                self.ndr = nd
-                if not self.run:
-                    self._start()
+            ref = self._dir_queue[-1] if self._dir_queue else self.dr
+            if nd == REV.get(ref, "") or nd == ref:
+                return
+            if len(self._dir_queue) >= 3:
+                return
+            self._dir_queue.append(nd)
+            if not self.run:
+                self._start()
 
 
 if __name__ == "__main__":
